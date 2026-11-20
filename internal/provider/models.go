@@ -861,7 +861,7 @@ func (p Provider) fetchOne(ctx context.Context) (fetched, error) {
 		if err != nil {
 			return fetched{}, err
 		}
-		return fetched{catalog.WithDrawers(p.planModels(ms), catalog.PublicDrawers(ctx, u)), u, nil, nil}, nil
+		return fetched{catalog.WithEmbeddings(catalog.WithDrawers(p.planModels(ms), catalog.PublicDrawers(ctx, u)), catalog.PublicEmbeddings(ctx, u)), u, nil, nil}, nil
 	}
 	if p.IsAzure() && (p.Chat != "" || p.Responses != "") {
 		// its deployments, asked with the key in api-key
@@ -1043,7 +1043,7 @@ func (p Provider) fetchOne(ctx context.Context) (fetched, error) {
 	}
 	out = p.withOllamaWindows(ctx, base, out)
 	return fetched{
-		catalog.WithDrawers(p.planModels(out), catalog.PublicDrawers(ctx, base)),
+		catalog.WithEmbeddings(catalog.WithDrawers(p.planModels(out), catalog.PublicDrawers(ctx, base)), catalog.PublicEmbeddings(ctx, base)),
 		base,
 		parts,
 		answered,

@@ -32,39 +32,8 @@ var PublicCatalogs = map[string]string{
 // PublicDrawers are the image models the public catalog for base's host
 // lists, marked as drawing; nil when there is none or it can't be read.
 func PublicDrawers(ctx context.Context, base string) []Model {
-	u, err := url.Parse(strings.TrimSpace(base))
-	if err != nil {
-		return nil
-	}
-	at, ok := PublicCatalogs[strings.TrimPrefix(u.Hostname(), "www.")]
-	if !ok {
-		return nil
-	}
-	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, at, nil)
-	if err != nil {
-		return nil
-	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "magpie")
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil
-	}
-	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		return nil
-	}
-	b, _ := io.ReadAll(io.LimitReader(res.Body, 16<<20))
-	var list struct {
-		Data []json.RawMessage `json:"data"`
-	}
-	if json.Unmarshal(b, &list) != nil {
-		return nil
-	}
 	var out []Model
-	for _, raw := range list.Data {
+	for _, raw := range publicRows(ctx, PublicCatalogs, base) {
 		if d, ok := openRouterDrawer(raw); ok {
 			if d.ID != "" {
 				out = append(out, d)
@@ -97,6 +66,101 @@ func PublicDrawers(ctx context.Context, base string) []Model {
 		out = append(out, d)
 	}
 	return out
+}
+
+// publicRows are the rows of the public list catalogs names for base's host,
+// nil when it names none or the list can't be read. It is asked with no key.
+func publicRows(ctx context.Context, catalogs map[string]string, base string) []json.RawMessage {
+	u, err := url.Parse(strings.TrimSpace(base))
+	if err != nil {
+		return nil
+	}
+	at, ok := catalogs[strings.TrimPrefix(u.Hostname(), "www.")]
+	if !ok {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, at, nil)
+	if err != nil {
+		return nil
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "magpie")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return nil
+	}
+	b, _ := io.ReadAll(io.LimitReader(res.Body, 16<<20))
+	var list struct {
+		Data []json.RawMessage `json:"data"`
+	}
+	if json.Unmarshal(b, &list) != nil {
+		return nil
+	}
+	return list.Data
+}
+
+// PublicEmbeddingCatalogs are vendors that publish their embedding models on
+// a list of their own, apart from the /models a key is asked at: OpenRouter's
+// /models lists only the models that answer in text, so its embedding models
+// were absent from a provider there, and from /v1/models?kind=embedding
+// (#7321).
+var PublicEmbeddingCatalogs = map[string]string{
+	"openrouter.ai": "https://openrouter.ai/api/v1/embeddings/models",
+}
+
+// PublicEmbeddings are the embedding models the public list for base's host
+// names, marked as serving embeddings; nil when there is none or it can't be
+// read.
+func PublicEmbeddings(ctx context.Context, base string) []Model {
+	var out []Model
+	for _, raw := range publicRows(ctx, PublicEmbeddingCatalogs, base) {
+		if m, ok := openRouterEmbedding(raw); ok && m.ID != "" {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// openRouterEmbedding reads a row of OpenRouter's /embeddings/models:
+// {"id": "cohere/embed-5-fast", "name": "Cohere: Embed 5 Fast",
+// "created": <unix seconds>, "context_length": 128000, "architecture":
+// {"input_modalities": ["text", "image"], "output_modalities":
+// ["embeddings"]}}. A row that gives no embeddings isn't kept.
+func openRouterEmbedding(raw json.RawMessage) (Model, bool) {
+	var m struct {
+		ID           string  `json:"id"`
+		Name         string  `json:"name"`
+		Created      float64 `json:"created"`
+		Context      int     `json:"context_length"`
+		Architecture *struct {
+			In  []string `json:"input_modalities"`
+			Out []string `json:"output_modalities"`
+		} `json:"architecture"`
+	}
+	if json.Unmarshal(raw, &m) != nil || m.ID == "" || m.Architecture == nil || !slices.Contains(m.Architecture.Out, "embeddings") {
+		return Model{}, false
+	}
+	e := Model{ID: m.ID, Name: m.Name, Serves: ServesEmbedding, Context: m.Context, OutputModalities: Kinds(m.Architecture.Out)}
+	// the vendor's prefix ("Cohere: ") is the provider's to say
+	if _, rest, ok := strings.Cut(e.Name, ": "); ok && rest != "" {
+		e.Name = rest
+	}
+	if e.Name == "" {
+		e.Name = m.ID
+	}
+	if m.Created > 0 {
+		e.Released = time.Unix(int64(m.Created), 0).UTC().Format("2006-01-02")
+	}
+	if slices.Contains(m.Architecture.In, "image") {
+		e.Images, e.ImageInput = true, imageInputOf(true)
+	}
+	return e, true
 }
 
 // openRouterDrawer reads a row of OpenRouter's /models?output_modalities=image
@@ -144,10 +208,16 @@ func openRouterDrawer(raw json.RawMessage) (Model, bool) {
 }
 
 // WithDrawers adds the drawers not already in ms.
-func WithDrawers(ms, drawers []Model) []Model {
-	for _, d := range drawers {
-		if !slices.ContainsFunc(ms, func(m Model) bool { return m.ID == d.ID }) {
-			ms = append(ms, d)
+func WithDrawers(ms, drawers []Model) []Model { return addMissing(ms, drawers) }
+
+// WithEmbeddings adds the embedding models not already in ms.
+func WithEmbeddings(ms, embeddings []Model) []Model { return addMissing(ms, embeddings) }
+
+// addMissing adds the models of extra whose id ms doesn't hold yet.
+func addMissing(ms, extra []Model) []Model {
+	for _, e := range extra {
+		if !slices.ContainsFunc(ms, func(m Model) bool { return m.ID == e.ID }) {
+			ms = append(ms, e)
 		}
 	}
 	return ms
