@@ -213,6 +213,10 @@ func TestSettingsSaveKeepsWhatItDoesNotSend(t *testing.T) {
 		RedactModelName:      "astrlink-guard",
 		RedactModelScore:     map[string]float64{"astrlink-guard": 0.9},
 		RedactRouteTo:        "fake/m1",
+		// the local models' folder, chosen under Advanced and set by its own
+		// route (settings/pii-model), so a save of the Settings page shows
+		// whether it keeps the folder
+		RedactModelDir: "/models",
 	}
 	was.RedactModelOff, was.RedactModelAuto = true, true
 	was.DesktopSubagentEffort = "high"
