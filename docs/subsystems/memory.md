@@ -244,8 +244,11 @@ further (`State.Since`), unless a range is picked.
 - `Keep` runs 5 minutes after the GUI backend starts, then hourly
   (`keepDistilling` in `internal/gui/memory_distill.go`). `Run` takes at
   most 30 conversations (`PerRun`, more than a busy hour brings) quiet for 30 minutes (`Quiet`) with at
-  least two turns, and skips the gateway's own records, read-only
-  agents, subagent sessions and its own agent (`memory`). One run at a
+  least two turns, and skips the gateway's own records, sessions with no
+  transcript, subagent sessions and its own agent (`memory`). A session
+  magpie can only read (Antigravity's, agy's, the Cursor editor's:
+  `Session.ReadOnly`) is read as any other, since distillation only reads
+  one; before, those agents were never learned from (#7329). One run at a
   time, in this process and across processes (`.run` lock).
 - What is sent: the conversation's user and assistant text only (no
   tools, no reasoning), cut to 24k characters keeping the head and the

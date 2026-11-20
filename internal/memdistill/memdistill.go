@@ -368,7 +368,10 @@ func forget(at, since, oldest time.Time) bool {
 }
 
 // due are the sessions to read now, the latest first, and the last turn
-// of the oldest listed.
+// of the oldest listed. A session magpie can only read, Antigravity's or the
+// Cursor editor's (Session.ReadOnly), is read as any other one it has a
+// transcript for: ReadOnly says magpie can't resume or move it, and reading
+// it for what to remember doesn't (#7329).
 func due(st State, t time.Time) ([]sessions.Session, time.Time) {
 	var out []sessions.Session
 	var oldest time.Time
@@ -377,7 +380,7 @@ func due(st State, t time.Time) ([]sessions.Session, time.Time) {
 			oldest = s.Last
 		}
 		switch {
-		case s.Agent == Agent, s.Gateway, s.ReadOnly, !s.Transcript,
+		case s.Agent == Agent, s.Gateway, !s.Transcript,
 			s.ParentSession != "",
 			t.Sub(s.Last) < Quiet, s.Last.Before(st.Since):
 			continue

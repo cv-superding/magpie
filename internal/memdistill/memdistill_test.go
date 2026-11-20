@@ -179,6 +179,32 @@ func TestReadsQuietSessionsOnce(t *testing.T) {
 	}
 }
 
+// A session magpie can only read — Antigravity's, agy's, the Cursor
+// editor's — is learned from like any other it has a transcript for:
+// ReadOnly says magpie can't resume or move it, not that it can't read it
+// (#7329).
+func TestReadsASessionItCanOnlyRead(t *testing.T) {
+	sb := newSandbox(t)
+	on(t, "")
+	desk := sb.session("desk", time.Hour, "desk: deploys go out on Thursdays", "never on a Friday")
+	desk.Agent, desk.ReadOnly, desk.Resume = "antigravity", true, ""
+	sb.session("unread", time.Hour).Transcript = false
+	sb.reply = func(string) (string, error) {
+		return "```json\n" + `[{"text":"Deploys go out on Thursdays","kind":"rule","scope":"project","quote":"deploys go out on Thursdays"}]` + "\n```", nil
+	}
+	res, err := Run(context.Background(), "auto/m", sb.complete)
+	if err != nil || res.Read != 1 || res.Added != 1 {
+		t.Fatalf("%+v %v %q", res, err, sb.asked)
+	}
+	if len(sb.asked) != 1 || sb.asked[0] != "auto/m User: desk: deploys go out on Thursdays" {
+		t.Fatalf("asked about %q", sb.asked)
+	}
+	ms := memories(t)
+	if len(ms) != 1 || len(ms[0].Sources) != 1 || ms[0].Sources[0].Agent != "antigravity" || ms[0].Sources[0].Session != "desk" {
+		t.Fatalf("%+v", ms)
+	}
+}
+
 // What the model is sent: the user's and the assistant's words, not
 // thinking or tool calls; the memories already known; and instructions
 // that name neither the app nor a vendor.
