@@ -32,8 +32,12 @@ func sandboxHome(t *testing.T) string {
 	for _, v := range agentenv.Vars {
 		t.Setenv(v, "")
 	}
-	t.Setenv("APPDATA", "")
-	t.Setenv("LOCALAPPDATA", "")
+	// Windows' config and cache folders, under the sandbox too: left empty,
+	// os.UserConfigDir fails there ("%AppData% is not defined"), so a test
+	// that reads an agent's folder from it found none (TestAionUiImportRow,
+	// TestCherryStudioImportRow, #6068)
+	t.Setenv("APPDATA", filepath.Join(h, "AppData", "Roaming"))
+	t.Setenv("LOCALAPPDATA", filepath.Join(h, "AppData", "Local"))
 	return h
 }
 
