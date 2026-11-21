@@ -62,7 +62,11 @@ func pagePlugins(t *testing.T) (on, off string) {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(filepath.Join(h, "secret.txt"), filepath.Join(on, "page", "link.txt")); err != nil {
-		t.Fatal(err)
+		// Windows makes no symlink without Developer Mode or an elevated
+		// token ("A required privilege is not held by the client"), and
+		// every test here is about what the page service does with this
+		// link (#6068)
+		t.Skipf("no symlink to point out of the page's folder: %v", err)
 	}
 	if err := os.MkdirAll(settings.Dir(), 0o755); err != nil {
 		t.Fatal(err)
