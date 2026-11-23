@@ -293,14 +293,19 @@ func TestMiseShimWindowsFiveAgents(t *testing.T) {
 		return filepath.Join(prefix, s.name) + "\r\n", nil
 	}
 	t.Cleanup(func() { shimWhich = was })
-	// npm's own scripts for snow-ai, naming each package's bin script
+	// npm's own scripts for snow-ai, naming each package's bin script; the
+	// install script runs for the two whose package needs one (cliSpec
+	// .scripts), so their install names it first
 	sh, cmdShim := fixture(t, "node/snow"), fixture(t, "node/snow.cmd")
-	for _, c := range []struct{ id, cmd, pkg, script string }{
-		{"claude", "claude", "@anthropic-ai/claude-code", `@anthropic-ai\claude-code\cli.js`},
-		{"pi", "pi", "@earendil-works/pi-coding-agent", `@earendil-works\pi-coding-agent\dist\cli.js`},
-		{"codex", "codex", "@openai/codex", `@openai\codex\bin\codex.js`},
-		{"opencode", "opencode", "opencode-ai", `opencode-ai\bin\opencode`},
-		{"codebuddy", "codebuddy", "@tencent-ai/codebuddy-code", `@tencent-ai\codebuddy-code\bin\codebuddy`},
+	for _, c := range []struct {
+		id, cmd, pkg, script string
+		scripts              bool
+	}{
+		{"claude", "claude", "@anthropic-ai/claude-code", `@anthropic-ai\claude-code\cli.js`, true},
+		{"pi", "pi", "@earendil-works/pi-coding-agent", `@earendil-works\pi-coding-agent\dist\cli.js`, false},
+		{"codex", "codex", "@openai/codex", `@openai\codex\bin\codex.js`, false},
+		{"opencode", "opencode", "opencode-ai", `opencode-ai\bin\opencode`, true},
+		{"codebuddy", "codebuddy", "@tencent-ai/codebuddy-code", `@tencent-ai\codebuddy-code\bin\codebuddy`, false},
 	} {
 		file(t, filepath.Join(prefix, "node_modules", c.script), "")
 		file(t, filepath.Join(prefix, "node_modules", filepath.FromSlash(c.pkg), "package.json"), `{"name":"`+c.pkg+`","version":"1.2.3"}`)
@@ -315,7 +320,11 @@ func TestMiseShimWindowsFiveAgents(t *testing.T) {
 		if real != cmd {
 			t.Errorf("%s: program %q", c.id, real)
 		}
-		if u == nil || !reflect.DeepEqual(u.cmd, []string{npm, "install", "-g", "--prefix", prefix, c.pkg + "@latest"}) {
+		want := []string{npm, "install", "-g", "--prefix", prefix}
+		if c.scripts {
+			want = append(want, "--allow-scripts="+c.pkg)
+		}
+		if u == nil || !reflect.DeepEqual(u.cmd, append(want, c.pkg+"@latest")) {
 			t.Errorf("%s: %+v", c.id, u)
 			continue
 		}
